@@ -139,7 +139,7 @@
       transform: translateY(-2px);
       box-shadow: 0 6px 16px rgba(139,92,246,0.4);
     }
-    .countdown-btn {
+    .countdown-btn { /* Used during simulated countdown if SDK fails */
       background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
       color: white;
       cursor: not-allowed;
@@ -160,6 +160,13 @@
       50% { transform: scale(1.05); }
       100% { transform: scale(1); }
     }
+    .ad-processing-btn { /* For when an ad is actively being shown/processed */
+      background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+      color: white;
+      cursor: wait;
+      box-shadow: 0 2px 8px rgba(59,130,246,0.3);
+    }
+
 
     /* Bottom Navigation */
     .bottom-nav {
@@ -291,39 +298,9 @@
     </div>
   </div>
 
-  <!-- Monetag Ad Script -->
-  <!-- IMPORTANT: Replace with the correct Monetag script and configuration. -->
-  <!-- This is a generic placeholder. You NEED to consult Monetag's documentation -->
-  <!-- for the exact way to integrate and handle callbacks for rewarded ads. -->
-  <script async="async" data-cfasync="false" src="//thubanoa.com/1?z=7834450"></script>
-
-  <!-- If thubanoa.com exposes a function like show_9758754() that returns a Promise -->
-  <!-- you would use it like this. Check their documentation. -->
-  <!--
-  <script>
-    function initializeMonetagAds() {
-      // Example for a rewarded ad function call.
-      // Replace 'show_9758754' with the actual function name provided by Monetag.
-      // This function should ideally be called when a user clicks a 'Watch Ad' button.
-      // The promise resolution is where you grant the reward.
-
-      // You might also need to check for Monetag's specific ad events or APIs.
-      console.log("Monetag ad initialization might be needed here.");
-
-      // Example of how to potentially use a function from thubanoa.com
-      if (typeof show_9758754 === 'function') {
-        console.log("Monetag show_9758754 function found.");
-        window.monetagRewardedAdPromise = show_9758754; // Store for later use
-      } else {
-        console.warn("Monetag show_9758754 function not found. Ad might not work as expected.");
-        window.monetagRewardedAdPromise = null; // Indicate no function available
-      }
-    }
-
-    // Call this when the page loads or when the ad section is visible
-    // initializeMonetagAds();
-  </script>
-  -->
+  <!-- Ad SDK Script (libtl.com for show_9758754) -->
+  <!-- This script is assumed to expose the show_9758754() function globally. -->
+  <script src='//libtl.com/sdk.js' data-zone='9758754' data-sdk='show_9758754'></script>
 
   <!-- Firebase and Telegram Script -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -438,7 +415,11 @@
 
     // --- Ad Handling Functions ---
 
-    // Function to simulate ad watching and progress to claim
+    /**
+     * Handles the entire process of watching an ad and claiming a reward.
+     * @param {string} adButtonId - The ID of the button that was clicked.
+     * @param {number} rewardAmountDogs - The amount of DOGS to reward.
+     */
     async function handleWatchAd(adButtonId, rewardAmountDogs) {
       const btn = document.getElementById(adButtonId);
       if (!btn) {
@@ -446,85 +427,61 @@
         return;
       }
 
-      // Prevent multiple clicks while ad is processing
+      // Disable the button immediately to prevent multiple clicks
       btn.disabled = true;
+      btn.className = 'ad-btn ad-processing-btn'; // Visual feedback
 
-      // --- Monetag Specific Integration ---
-      // This is where you'd ideally call Monetag's SDK function.
-      // Example: If Monetag provides a `showRewardedAd` function that returns a Promise.
-      // You must check Monetag's documentation for their actual implementation.
+      // Check if the ad SDK function is available globally
+      if (typeof window.show_9758754 === 'function') {
+        console.log("Attempting to show ad via show_9758754()...");
+        btn.textContent = "Loading Ad...";
 
-      let adCompleted = false;
-      let adErrorMessage = null;
-
-      // Check if the Monetag function is available from the script tag
-      if (window.monetagRewardedAdPromise && typeof window.monetagRewardedAdPromise === 'function') {
-        console.log("Attempting to show Monetag rewarded ad...");
         try {
-          // Call the Monetag ad function. This function MUST resolve/reject
-          // to indicate if the ad was watched and completed.
-          await window.monetagRewardedAdPromise(); // Execute the Monetag ad function
+          // Call the ad function which returns a Promise.
+          // The .then() callback will execute when the ad is successfully watched.
+          await window.show_9758754();
 
-          // If the promise resolves without throwing an error, assume ad completion.
-          adCompleted = true;
-          console.log("Monetag ad promise resolved successfully.");
+          // If the promise resolves, the ad was watched successfully.
+          // Now, we trigger the reward claim.
+          console.log("Ad shown and completed successfully via SDK.");
+          await claimAdReward(adButtonId, rewardAmountDogs);
+
         } catch (error) {
-          adErrorMessage = "Ad failed to load or play. Please try again.";
-          console.error("Monetag ad error:", error);
+          // If the promise rejects, an error occurred.
+          console.error("Ad failed to load or play:", error);
+          alert("Sorry, the ad could not be displayed. Please try again later.");
+
+          // Reset button to watch state on error
+          btn.className = 'ad-btn watch-btn';
+          btn.disabled = false;
+          btn.textContent = 'Watch Ad';
         }
       } else {
-        console.warn("Monetag ad function not found or not initialized. Falling back to simulation.");
-        // Fallback to simulation if Monetag's specific function isn't available
-        // You could also show a simpler ad here if you have another provider.
+        console.warn("Ad SDK function 'show_9758754' not found. Cannot show real ad.");
+        alert("Ad service is temporarily unavailable. Please try again later.");
 
-        btn.className = 'ad-btn countdown-btn';
-        btn.textContent = 'Starting...';
-
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Short delay before simulation
-
-        let countdown = 15; // Simulate 15 seconds
-        btn.textContent = `Watching... ${countdown}s`;
-
-        const countdownInterval = setInterval(() => {
-          countdown--;
-          btn.textContent = `Watching... ${countdown}s`;
-          if (countdown < 0) {
-            clearInterval(countdownInterval);
-            adCompleted = true; // Simulation complete
-            console.log("Ad simulation completed.");
-          }
-        }, 1000);
-
-        // Wait for the simulation to finish
-        await new Promise(resolve => setTimeout(resolve, 15000 + 2000)); // Total simulation time
-      }
-
-      // --- Reward Logic ---
-      if (adCompleted) {
-        await claimAdReward(adButtonId, rewardAmountDogs);
-      } else {
-        // Ad did not complete (either Monetag failed or simulation was interrupted)
-        btn.className = 'ad-btn watch-btn'; // Reset to watch state
+        // Reset button to watch state if SDK is not available
+        btn.className = 'ad-btn watch-btn';
         btn.disabled = false;
         btn.textContent = 'Watch Ad';
-        alert(`Ad could not be completed. ${adErrorMessage ? adErrorMessage : ''}`);
-        console.log("Ad not completed, reward not granted.");
       }
     }
 
-    // Function to claim the reward from Firebase
+    /**
+     * Claims the earned reward from Firebase and updates the UI.
+     * @param {string} adButtonId - The ID of the button that triggered the claim.
+     * @param {number} rewardAmountDogs - The amount of DOGS to reward.
+     */
     async function claimAdReward(adButtonId, rewardAmountDogs) {
       const btn = document.getElementById(adButtonId);
-
-      // Ensure we are not already processing a claim
-      if (btn.classList.contains('claim-btn') || btn.disabled) {
-          console.log("Already claiming or button disabled.");
-          return;
-      }
 
       try {
         if (userKey === "UNKNOWN_USER") {
             alert("Cannot claim rewards: Unknown user.");
+            // Reset button even if user is unknown, to allow re-attempts
+            btn.className = 'ad-btn watch-btn';
+            btn.disabled = false;
+            btn.textContent = 'Watch Ad';
             return;
         }
 
@@ -554,21 +511,22 @@
         btn.className = 'ad-btn watch-btn';
         btn.disabled = false;
         btn.textContent = 'Watch Ad';
-        // Re-attach the watch ad handler
+        // Re-attach the watch ad handler for the next use
         btn.onclick = () => handleWatchAd(adButtonId, rewardAmountDogs);
 
       } catch (error) {
         console.error("Error claiming ad reward:", error);
         alert('Error claiming reward. Please try again!');
+
         // Reset button on error
         btn.className = 'ad-btn watch-btn';
         btn.disabled = false;
         btn.textContent = 'Watch Ad';
-        btn.onclick = () => handleWatchAd(adButtonId, rewardAmountDogs);
+        btn.onclick = () => handleWatchAd(adButtonId, rewardAmountDogs); // Re-attach handler
       }
     }
 
-    // --- Event Listeners ---
+    // --- Event Listeners and Initialization ---
     document.addEventListener('DOMContentLoaded', () => {
       loadUserData();
 
@@ -580,19 +538,14 @@
 
       const sponsoredAdButton = document.getElementById('ad-button-sponsored');
       if (sponsoredAdButton) {
-        // This button is "Coming Soon" as per your HTML.
-        // If you later want to enable it, you'd set its onclick to call handleWatchAd.
-        sponsoredAdButton.onclick = () => alert('This feature is coming soon! 🎉');
+        // This button is set up to use the same ad SDK.
+        // If "Coming Soon" means it should behave differently or not use ads yet,
+        // you would adjust this part. For now, it tries to use the same ad function.
+        sponsoredAdButton.onclick = () => handleWatchAd('ad-button-sponsored', 15); // Reward 15 DOGS
+        // If you want to keep it "Coming Soon" and not show ads yet:
+        // sponsoredAdButton.onclick = () => alert('This feature is coming soon! 🎉');
       }
-
-      // Optional: Initialize Monetag if you have a specific function to call on load
-      // if (typeof initializeMonetagAds === 'function') {
-      //   initializeMonetagAds();
-      // }
     });
-
-    // Making functions available globally if needed (e.g., for ad network callbacks)
-    // window.claimReward = claimReward; // Example if you need to call from outside
   </script>
 
 </body>
